@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 
+const API = 'https://smart-panchayat-r33v.onrender.com';
+
 function AdminPanel() {
   const navigate = useNavigate();
   const [complaints, setComplaints] = useState([]);
@@ -19,7 +21,7 @@ function AdminPanel() {
 
   const fetchAllComplaints = async (token) => {
     try {
-      const res = await axios.get('http://localhost:5000/api/complaints', {
+      const res = await axios.get(`${API}/api/complaints`, {
         headers: { Authorization: token }
       });
       const data = res.data.complaints;
@@ -40,7 +42,7 @@ function AdminPanel() {
   const updateStatus = async (id, status) => {
     const token = localStorage.getItem('token');
     try {
-      await axios.put(`http://localhost:5000/api/complaints/${id}/status`,
+      await axios.put(`${API}/api/complaints/${id}/status`,
         { status },
         { headers: { Authorization: token } }
       );
@@ -67,7 +69,6 @@ function AdminPanel() {
 
   return (
     <div style={{ minHeight: '100vh', background: '#f5f5f5', fontFamily: 'Arial, sans-serif' }}>
-      {/* Navbar */}
       <div style={{
         background: '#1a3a6b', color: 'white',
         padding: '16px 24px', display: 'flex',
@@ -85,8 +86,6 @@ function AdminPanel() {
       </div>
 
       <div style={{ padding: '24px', maxWidth: '1100px', margin: '0 auto' }}>
-
-        {/* Stats */}
         <div style={{ display: 'flex', gap: '16px', marginBottom: '24px', flexWrap: 'wrap' }}>
           {[
             { label: 'Total Complaints', value: stats.total, color: '#1a3a6b' },
@@ -105,7 +104,6 @@ function AdminPanel() {
           ))}
         </div>
 
-        {/* Success message */}
         {message && (
           <div style={{
             background: '#e0ffe0', color: '#006600',
@@ -113,7 +111,6 @@ function AdminPanel() {
           }}>{message}</div>
         )}
 
-        {/* Complaints Table */}
         <div style={{
           background: 'white', borderRadius: '12px',
           boxShadow: '0 2px 8px rgba(0,0,0,0.1)', overflow: 'hidden'
@@ -133,12 +130,10 @@ function AdminPanel() {
           ) : (
             complaints.map((complaint) => (
               <div key={complaint._id} style={{
-                padding: '20px 24px',
-                borderBottom: '1px solid #f0f0f0',
+                padding: '20px 24px', borderBottom: '1px solid #f0f0f0',
                 display: 'flex', justifyContent: 'space-between',
                 alignItems: 'flex-start', gap: '16px'
               }}>
-                {/* Complaint Info */}
                 <div style={{ flex: 1 }}>
                   <h4 style={{ margin: '0 0 6px', color: '#333' }}>{complaint.title}</h4>
                   <p style={{ margin: '0 0 8px', color: '#666', fontSize: '14px' }}>{complaint.description}</p>
@@ -150,47 +145,28 @@ function AdminPanel() {
                     <span>📅 {new Date(complaint.createdAt).toLocaleDateString('en-IN')}</span>
                   </div>
                 </div>
-
-                {/* Status + Actions */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'flex-end' }}>
                   <span style={{
                     background: getStatusColor(complaint.status),
                     color: 'white', padding: '4px 12px',
                     borderRadius: '20px', fontSize: '12px', fontWeight: 'bold'
-                  }}>
-                    {complaint.status}
-                  </span>
+                  }}>{complaint.status}</span>
                   <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                     {complaint.status !== 'in-progress' && (
-                      <button
-                        onClick={() => updateStatus(complaint._id, 'in-progress')}
-                        style={{
-                          background: '#2196f3', color: 'white',
-                          border: 'none', padding: '6px 12px',
-                          borderRadius: '6px', cursor: 'pointer', fontSize: '12px'
-                        }}>
+                      <button onClick={() => updateStatus(complaint._id, 'in-progress')}
+                        style={{ background: '#2196f3', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '12px' }}>
                         In Progress
                       </button>
                     )}
                     {complaint.status !== 'resolved' && (
-                      <button
-                        onClick={() => updateStatus(complaint._id, 'resolved')}
-                        style={{
-                          background: '#4caf50', color: 'white',
-                          border: 'none', padding: '6px 12px',
-                          borderRadius: '6px', cursor: 'pointer', fontSize: '12px'
-                        }}>
+                      <button onClick={() => updateStatus(complaint._id, 'resolved')}
+                        style={{ background: '#4caf50', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '12px' }}>
                         Resolve
                       </button>
                     )}
                     {complaint.status !== 'pending' && (
-                      <button
-                        onClick={() => updateStatus(complaint._id, 'pending')}
-                        style={{
-                          background: '#ff9800', color: 'white',
-                          border: 'none', padding: '6px 12px',
-                          borderRadius: '6px', cursor: 'pointer', fontSize: '12px'
-                        }}>
+                      <button onClick={() => updateStatus(complaint._id, 'pending')}
+                        style={{ background: '#ff9800', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '12px' }}>
                         Pending
                       </button>
                     )}

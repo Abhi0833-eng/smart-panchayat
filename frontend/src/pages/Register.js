@@ -20,7 +20,7 @@ function Register() {
     setLoading(true);
     setError('');
     try {
-      await axios.post('http://localhost:5000/api/auth/register', formData);
+      await axios.post('https://smart-panchayat-r33v.onrender.com/api/auth/register', formData);
       setSuccess('Registration successful! Redirecting to login...');
       setTimeout(() => navigate('/login'), 2000);
     } catch (err) {

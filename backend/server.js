@@ -5,7 +5,12 @@ require('dotenv').config();
 
 const app = express();
 
-app.use(cors());
+// CORS — must be before routes
+app.use(cors({
+  origin: ['https://smart-panchayat-six.vercel.app', 'http://localhost:3000'],
+  credentials: true
+}));
+
 app.use(express.json());
 
 mongoose.connect(process.env.MONGO_URI)

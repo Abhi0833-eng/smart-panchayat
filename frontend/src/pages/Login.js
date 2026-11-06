@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import API from '../config/api';
 
 function Login() {
   const navigate = useNavigate();
@@ -17,12 +18,13 @@ function Login() {
     setLoading(true);
     setError('');
     try {
-      const res = await axios.post('https://smart-panchayat-r33v.onrender.com/api/auth/login', formData);
+      const res = await axios.post(`${API}/api/auth/login`, formData);
       localStorage.setItem('token', res.data.token);
       localStorage.setItem('user', JSON.stringify(res.data.user));
       navigate('/dashboard');
     } catch (err) {
-      setError(err.response?.data?.message || 'Login failed');
+      const message = err.response?.data?.message;
+      setError(message || (err.request ? 'Server is unreachable. Please try again.' : 'Login failed'));
     }
     setLoading(false);
   };

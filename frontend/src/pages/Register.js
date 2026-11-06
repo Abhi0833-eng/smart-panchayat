@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import API from '../config/api';
 
 function Register() {
   const navigate = useNavigate();
@@ -20,11 +21,12 @@ function Register() {
     setLoading(true);
     setError('');
     try {
-      await axios.post('https://smart-panchayat-r33v.onrender.com/api/auth/register', formData);
+      await axios.post(`${API}/api/auth/register`, formData);
       setSuccess('Registration successful! Redirecting to login...');
       setTimeout(() => navigate('/login'), 2000);
     } catch (err) {
-      setError(err.response?.data?.message || 'Registration failed');
+      const message = err.response?.data?.message;
+      setError(message || (err.request ? 'Server is unreachable. Please try again.' : 'Registration failed'));
     }
     setLoading(false);
   };

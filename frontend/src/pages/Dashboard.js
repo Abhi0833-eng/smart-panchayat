@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-
-const API = 'https://smart-panchayat-r33v.onrender.com';
+import API from '../config/api';
 
 function Dashboard() {
   const navigate = useNavigate();

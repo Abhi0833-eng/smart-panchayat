@@ -12,117 +12,68 @@ function Register() {
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleSubmit = async (event) => {
+    event.preventDefault();
     setLoading(true);
     setError('');
+    setSuccess('');
     try {
       await axios.post(`${API}/api/auth/register`, formData);
-      setSuccess('Registration successful! Redirecting to login...');
-      setTimeout(() => navigate('/login'), 2000);
-    } catch (err) {
-      const message = err.response?.data?.message;
-      setError(message || (err.request ? 'Server is unreachable. Please try again.' : 'Registration failed'));
+      setSuccess('Your account is ready. Taking you to sign in…');
+      window.setTimeout(() => navigate('/login', { replace: true }), 1400);
+    } catch (requestError) {
+      const message = requestError.response?.data?.message;
+      setError(message || (requestError.request ? 'The service is unreachable. Please try again.' : 'Registration failed. Please try again.'));
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
+  const fields = [
+    { label: 'Full name', name: 'name', type: 'text', placeholder: 'Your name', required: true, autocomplete: 'name' },
+    { label: 'Email address', name: 'email', type: 'email', placeholder: 'you@example.com', required: true, autocomplete: 'email' },
+    { label: 'Password', name: 'password', type: 'password', placeholder: 'At least 6 characters', required: true, autocomplete: 'new-password' },
+    { label: 'Phone number', name: 'phone', type: 'tel', placeholder: 'Optional phone number', required: false, autocomplete: 'tel' },
+    { label: 'Village', name: 'village', type: 'text', placeholder: 'Your village', required: false, autocomplete: 'address-level2' }
+  ];
+
   return (
-    <div style={{
-      minHeight: '100vh',
-      background: 'linear-gradient(135deg, #1a6b3c, #2d9e5f)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      fontFamily: 'Arial, sans-serif',
-      padding: '20px'
-    }}>
-      <div style={{
-        background: 'white',
-        borderRadius: '16px',
-        padding: '40px',
-        width: '100%',
-        maxWidth: '400px',
-        boxShadow: '0 20px 60px rgba(0,0,0,0.2)'
-      }}>
-        <div style={{ textAlign: 'center', marginBottom: '30px' }}>
-          <div style={{ fontSize: '40px' }}>🏛️</div>
-          <h2 style={{ color: '#1a6b3c', margin: '10px 0' }}>Register</h2>
-          <p style={{ color: '#666', margin: '0' }}>Create your account</p>
+    <main className="auth-page">
+      <aside className="auth-side">
+        <div>
+          <div className="brand-mark" aria-hidden="true">🏛️</div>
+          <p className="eyebrow" style={{ color: '#b9dfc4' }}>Join your community</p>
+          <h1>Small reports can lead to meaningful change.</h1>
+          <p>Create an account to report local issues and follow the response from your Panchayat.</p>
         </div>
-
-        {error && (
-          <div style={{
-            background: '#ffe0e0', color: '#cc0000',
-            padding: '10px', borderRadius: '8px',
-            marginBottom: '20px', fontSize: '14px'
-          }}>{error}</div>
-        )}
-
-        {success && (
-          <div style={{
-            background: '#e0ffe0', color: '#006600',
-            padding: '10px', borderRadius: '8px',
-            marginBottom: '20px', fontSize: '14px'
-          }}>{success}</div>
-        )}
-
-        <form onSubmit={handleSubmit}>
-          {[
-            { label: 'Full Name', name: 'name', type: 'text', placeholder: 'Enter your full name' },
-            { label: 'Email', name: 'email', type: 'email', placeholder: 'Enter your email' },
-            { label: 'Password', name: 'password', type: 'password', placeholder: 'Create a password' },
-            { label: 'Phone Number', name: 'phone', type: 'text', placeholder: 'Enter phone number' },
-            { label: 'Village', name: 'village', type: 'text', placeholder: 'Enter your village name' }
-          ].map((field) => (
-            <div key={field.name} style={{ marginBottom: '16px' }}>
-              <label style={{ display: 'block', marginBottom: '6px', color: '#333', fontWeight: 'bold', fontSize: '14px' }}>
-                {field.label}
+        <span className="auth-side-note">Smart Panchayat · Digital Village Service</span>
+      </aside>
+      <section className="auth-main">
+        <div className="auth-card">
+          <p className="eyebrow">Citizen registration</p>
+          <h2>Create your account</h2>
+          <p>Set up your profile to submit and track complaints.</p>
+          {error && <div className="error-banner" role="alert">{error}</div>}
+          {success && <div className="success-banner" role="status">{success}</div>}
+          <form className="auth-form" onSubmit={handleSubmit}>
+            {fields.map((field) => (
+              <label htmlFor={`register-${field.name}`} key={field.name}>
+                {field.label}{field.required ? ' *' : ''}
+                <input id={`register-${field.name}`} type={field.type} name={field.name}
+                  value={formData[field.name]} required={field.required} autoComplete={field.autocomplete}
+                  minLength={field.name === 'password' ? 6 : undefined}
+                  onChange={(event) => setFormData({ ...formData, [field.name]: event.target.value })}
+                  placeholder={field.placeholder} />
               </label>
-              <input
-                type={field.type}
-                name={field.name}
-                value={formData[field.name]}
-                onChange={handleChange}
-                placeholder={field.placeholder}
-                required
-                style={{
-                  width: '100%', padding: '12px',
-                  border: '1px solid #ddd', borderRadius: '8px',
-                  fontSize: '14px', boxSizing: 'border-box'
-                }}
-              />
-            </div>
-          ))}
-
-          <button
-            type="submit"
-            disabled={loading}
-            style={{
-              width: '100%', padding: '14px',
-              background: '#1a6b3c', color: 'white',
-              border: 'none', borderRadius: '8px',
-              fontSize: '16px', fontWeight: 'bold',
-              cursor: 'pointer', marginTop: '8px'
-            }}>
-            {loading ? 'Registering...' : 'Register'}
-          </button>
-        </form>
-
-        <p style={{ textAlign: 'center', marginTop: '20px', color: '#666' }}>
-          Already have an account?{' '}
-          <span
-            onClick={() => navigate('/login')}
-            style={{ color: '#1a6b3c', cursor: 'pointer', fontWeight: 'bold' }}>
-            Login here
-          </span>
-        </p>
-      </div>
-    </div>
+            ))}
+            <button type="submit" className="button button-primary" disabled={loading}>
+              {loading ? 'Creating account…' : 'Create account'}
+            </button>
+          </form>
+          <p className="auth-bottom">Already have an account? <button type="button" onClick={() => navigate('/login')}>Sign in</button></p>
+        </div>
+      </section>
+    </main>
   );
 }
 

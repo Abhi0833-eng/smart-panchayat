@@ -1,216 +1,444 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import API from '../config/api';
+import PortalHeader from '../components/PortalHeader';
+import { filterComplaints } from '../utils/complaints';
+import { clearSession, getSession } from '../utils/session';
+
+const statusNames = {
+  pending: 'Pending',
+  'in-progress': 'In progress',
+  resolved: 'Resolved'
+};
+
+const emptyForm = { title: '', description: '', category: 'water', village: '' };
+
+function formatDate(value) {
+  if (!value) return 'Not set';
+  return new Date(value).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+function ComplaintTimeline({ complaint }) {
+  const history = complaint.statusHistory?.length
+    ? complaint.statusHistory
+    : [{ status: complaint.status, note: 'Current status', changedAt: complaint.updatedAt }];
+
+  return (
+    <div className="timeline" aria-label="Complaint status history">
+      {history.slice().reverse().map((entry, index) => (
+        <div className="timeline-item" key={`${entry.status}-${entry.changedAt}-${index}`}>
+          <span className="timeline-dot" />
+          <div className="timeline-content">
+            <strong>{statusNames[entry.status] || entry.status}</strong>
+            {entry.note && <p>{entry.note}</p>}
+            <small>{entry.changedBy?.name ? `Updated by ${entry.changedBy.name} · ` : ''}{formatDate(entry.changedAt)}</small>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function FeedbackForm({ complaint, token, onSaved, onError }) {
+  const [rating, setRating] = useState(0);
+  const [comment, setComment] = useState('');
+  const [saving, setSaving] = useState(false);
+  const feedbackHistory = complaint.feedbackHistory || [];
+  const latestFeedback = feedbackHistory[feedbackHistory.length - 1];
+  const alreadyRated = latestFeedback && (
+    !complaint.resolvedAt || new Date(latestFeedback.submittedAt) >= new Date(complaint.resolvedAt)
+  );
+
+  const submitFeedback = async (event) => {
+    event.preventDefault();
+    setSaving(true);
+    onError('');
+    try {
+      const response =       await axios.post(`${API}/api/complaints/${complaint._id}/feedback`, { rating, comment }, {
+        headers: { Authorization: token }
+      });
+      await onSaved();
+    } catch (error) {
+      onError(error.response?.data?.message || 'Feedback could not be saved.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (alreadyRated) {
+    return (
+      <div className="feedback-panel">
+        <h4>Your feedback</h4>
+        <div className="feedback-display">
+          <strong aria-label={`${latestFeedback.rating} out of 5 stars`}>{'★'.repeat(latestFeedback.rating)}{'☆'.repeat(5 - latestFeedback.rating)}</strong>
+          {latestFeedback.comment && <div>{latestFeedback.comment}</div>}
+          <small>{formatDate(latestFeedback.submittedAt)}</small>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <form className="feedback-panel" onSubmit={submitFeedback}>
+      <h4>Was this issue resolved to your satisfaction?</h4>
+      <div className="star-rating" role="group" aria-label="Rate this resolution">
+        {[1, 2, 3, 4, 5].map((value) => (
+          <button
+            type="button"
+            className={value <= rating ? 'selected' : ''}
+            key={value}
+            aria-label={`${value} star${value === 1 ? '' : 's'}`}
+            aria-pressed={rating === value}
+            onClick={() => setRating(value)}
+          >★</button>
+        ))}
+      </div>
+      <div className="form-field" style={{ marginTop: 8 }}>
+        <label htmlFor={`feedback-${complaint._id}`}>Optional comment</label>
+        <textarea id={`feedback-${complaint._id}`} value={comment} maxLength={1000}
+          onChange={(event) => setComment(event.target.value)} placeholder="Tell us what went well or what could improve." />
+      </div>
+      <div className="form-actions">
+        <button className="button button-primary button-small" disabled={saving || !rating} type="submit">
+          {saving ? 'Saving…' : 'Send feedback'}
+        </button>
+        <span className="form-help">Your rating is saved with this complaint.</span>
+      </div>
+    </form>
+  );
+}
+
+function ComplaintCard({ complaint, token, refresh, setError, setSuccess }) {
+  const [showReopen, setShowReopen] = useState(false);
+  const [reason, setReason] = useState('');
+  const [reopening, setReopening] = useState(false);
+
+  const reopenComplaint = async (event) => {
+    event.preventDefault();
+    setReopening(true);
+    setError('');
+    try {
+      await axios.post(`${API}/api/complaints/${complaint._id}/reopen`, { reason }, {
+        headers: { Authorization: token }
+      });
+      setShowReopen(false);
+      setReason('');
+      setSuccess('Complaint reopened and the administration team has been notified.');
+      await refresh();
+    } catch (error) {
+      setError(error.response?.data?.message || 'The complaint could not be reopened.');
+    } finally {
+      setReopening(false);
+    }
+  };
+
+  const coordinates = complaint.location;
+  return (
+    <article className="complaint-card" id={`complaint-${complaint._id}`}>
+      <div className="complaint-main">
+        <div className="complaint-topline">
+          <div>
+            <h3 className="complaint-title">{complaint.title}</h3>
+            <p className="complaint-description">{complaint.description}</p>
+          </div>
+          <div className="complaint-badges">
+            <span className={`status-pill status-${complaint.status}`}>{statusNames[complaint.status] || complaint.status}</span>
+          </div>
+        </div>
+        <div className="meta-list">
+          <span>📍 {complaint.village}</span>
+          <span>🏷️ {complaint.category}</span>
+          <span>📅 Submitted {new Date(complaint.createdAt).toLocaleDateString('en-IN')}</span>
+          {complaint.assignedDepartment && <span>🏢 {complaint.assignedDepartment}</span>}
+        </div>
+        {complaint.photo?.data && (
+          <img className="photo-preview" alt={`Evidence for ${complaint.title}`} src={`data:${complaint.photo.mimeType};base64,${complaint.photo.data}`} />
+        )}
+        {coordinates && (
+          <a className="map-link" href={`https://www.openstreetmap.org/?mlat=${coordinates.latitude}&mlon=${coordinates.longitude}#map=16/${coordinates.latitude}/${coordinates.longitude}`} target="_blank" rel="noreferrer">
+            View reported location ↗
+          </a>
+        )}
+        <ComplaintTimeline complaint={complaint} />
+        {complaint.status === 'resolved' && (
+          <>
+            <FeedbackForm
+              complaint={complaint}
+              token={token}
+              onSaved={async () => {
+                setSuccess('Thank you for your feedback. It has been saved.');
+                await refresh();
+              }}
+              onError={setError}
+            />
+            <button type="button" className="subtle-link" onClick={() => setShowReopen((visible) => !visible)}>
+              The issue is still not fixed? Reopen this complaint
+            </button>
+            {showReopen && (
+              <form className="feedback-panel" onSubmit={reopenComplaint}>
+                <div className="form-field">
+                  <label htmlFor={`reopen-${complaint._id}`}>Why does it need more attention?</label>
+                  <textarea id={`reopen-${complaint._id}`} value={reason} onChange={(event) => setReason(event.target.value)}
+                    required maxLength={500} placeholder="Describe what remains unresolved." />
+                </div>
+                <div className="form-actions">
+                  <button className="button button-primary button-small" type="submit" disabled={reopening || !reason.trim()}>
+                    {reopening ? 'Reopening…' : 'Reopen complaint'}
+                  </button>
+                  <button className="button button-light button-small" type="button" onClick={() => setShowReopen(false)}>Cancel</button>
+                </div>
+              </form>
+            )}
+          </>
+        )}
+      </div>
+    </article>
+  );
+}
 
 function Dashboard() {
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
   const [complaints, setComplaints] = useState([]);
   const [showForm, setShowForm] = useState(false);
-  const [formData, setFormData] = useState({
-    title: '', description: '', category: 'water', village: ''
-  });
-  const [message, setMessage] = useState('');
+  const [formData, setFormData] = useState(emptyForm);
+  const [photo, setPhoto] = useState(null);
+  const [location, setLocation] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [activeFilter, setActiveFilter] = useState('all');
+  const [search, setSearch] = useState('');
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const { token, user: sessionUser } = useMemo(() => getSession(), []);
+
+  const fetchComplaints = useCallback(async () => {
+    try {
+      const response = await axios.get(`${API}/api/complaints/my`, {
+        headers: { Authorization: token }
+      });
+      setComplaints(response.data.complaints);
+      setError('');
+    } catch (requestError) {
+      if (requestError.response?.status === 401) {
+        clearSession();
+        navigate('/login', { replace: true });
+        return;
+      }
+      setError(requestError.response?.data?.message || 'Could not load your complaints. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  }, [navigate, token]);
 
   useEffect(() => {
-    const userData = localStorage.getItem('user');
-    const token = localStorage.getItem('token');
-    if (!userData || !token) { navigate('/login'); return; }
-    setUser(JSON.parse(userData));
-    fetchComplaints(token);
-  }, [navigate]);
-
-  const fetchComplaints = async (token) => {
-    try {
-      const res = await axios.get(`${API}/api/complaints/my`, {
-        headers: { Authorization: token }
-      });
-      setComplaints(res.data.complaints);
-    } catch (err) {
-      console.log('Error fetching complaints');
+    if (!token || !sessionUser) {
+      navigate('/login', { replace: true });
+      return;
     }
-  };
+    setUser(sessionUser);
+    fetchComplaints();
+    const timer = window.setInterval(fetchComplaints, 30000);
+    return () => window.clearInterval(timer);
+  }, [fetchComplaints, navigate, sessionUser, token]);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    const token = localStorage.getItem('token');
+  const counts = useMemo(() => ({
+    all: complaints.length,
+    pending: complaints.filter((item) => item.status === 'pending').length,
+    'in-progress': complaints.filter((item) => item.status === 'in-progress').length,
+    resolved: complaints.filter((item) => item.status === 'resolved').length
+  }), [complaints]);
+
+  const visibleComplaints = useMemo(() => filterComplaints(
+    complaints,
+    activeFilter,
+    search,
+    ['title', 'description', 'category', 'village']
+  ), [activeFilter, complaints, search]);
+
+  const submitComplaint = async (event) => {
+    event.preventDefault();
+    setSubmitting(true);
+    setError('');
+    setSuccess('');
     try {
-      await axios.post(`${API}/api/complaints`, formData, {
-        headers: { Authorization: token }
-      });
-      setMessage('Complaint submitted successfully!');
+      await axios.post(`${API}/api/complaints`, {
+        ...formData,
+        ...(photo ? { photo } : {}),
+        ...(location ? { location } : {})
+      }, { headers: { Authorization: token } });
+      setSuccess('Your complaint is in. You’ll see updates here as it moves forward.');
       setShowForm(false);
-      setFormData({ title: '', description: '', category: 'water', village: '' });
-      fetchComplaints(token);
-      setTimeout(() => setMessage(''), 3000);
-    } catch (err) {
-      setMessage('Error submitting complaint');
+      setFormData(emptyForm);
+      setPhoto(null);
+      setLocation(null);
+      await fetchComplaints();
+    } catch (requestError) {
+      setError(requestError.response?.data?.message || 'Complaint could not be submitted. Please try again.');
+    } finally {
+      setSubmitting(false);
     }
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    navigate('/');
+  const handlePhoto = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 2 * 1024 * 1024) {
+      setError('Choose a JPEG, PNG or WebP photo under 2 MB.');
+      event.target.value = '';
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => setPhoto({ mimeType: file.type, data: reader.result });
+    reader.onerror = () => setError('The selected photo could not be read.');
+    reader.readAsDataURL(file);
+    setError('');
   };
 
-  const getStatusColor = (status) => {
-    if (status === 'pending') return '#ff9800';
-    if (status === 'in-progress') return '#2196f3';
-    if (status === 'resolved') return '#4caf50';
-    return '#666';
+  const captureLocation = () => {
+    if (!navigator.geolocation) {
+      setError('Location sharing is not available in this browser.');
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setLocation({ latitude: position.coords.latitude, longitude: position.coords.longitude });
+        setError('');
+      },
+      () => setError('Location could not be accessed. You can still submit without it.'),
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
   };
+
+  const stats = [
+    { key: 'all', label: 'Total complaints', icon: '▦', tone: 'green', value: counts.all },
+    { key: 'pending', label: 'Awaiting action', icon: '◷', tone: 'orange', value: counts.pending },
+    { key: 'in-progress', label: 'In progress', icon: '↗', tone: 'blue', value: counts['in-progress'] },
+    { key: 'resolved', label: 'Resolved', icon: '✓', tone: 'green', value: counts.resolved }
+  ];
 
   return (
-    <div style={{ minHeight: '100vh', background: '#f5f5f5', fontFamily: 'Arial, sans-serif' }}>
-      <div style={{
-        background: '#1a6b3c', color: 'white',
-        padding: '16px 24px', display: 'flex',
-        justifyContent: 'space-between', alignItems: 'center'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <span style={{ fontSize: '24px' }}>🏛️</span>
-          <span style={{ fontWeight: 'bold', fontSize: '18px' }}>Smart Panchayat</span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <span>👤 {user?.name}</span>
-          <button onClick={handleLogout} style={{
-            background: 'rgba(255,255,255,0.2)', color: 'white',
-            border: '1px solid white', padding: '8px 16px',
-            borderRadius: '6px', cursor: 'pointer'
-          }}>Logout</button>
-        </div>
-      </div>
-
-      <div style={{ padding: '24px', maxWidth: '900px', margin: '0 auto' }}>
-        <div style={{
-          background: 'white', borderRadius: '12px',
-          padding: '24px', marginBottom: '24px',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-        }}>
-          <h2 style={{ margin: '0 0 8px', color: '#1a6b3c' }}>Welcome, {user?.name}! 👋</h2>
-          <p style={{ margin: '0', color: '#666' }}>Manage your complaints and track their status here.</p>
-        </div>
-
-        {message && (
-          <div style={{
-            background: '#e0ffe0', color: '#006600',
-            padding: '12px', borderRadius: '8px', marginBottom: '20px'
-          }}>{message}</div>
-        )}
-
-        <div style={{ display: 'flex', gap: '16px', marginBottom: '24px', flexWrap: 'wrap' }}>
-          {[
-            { label: 'Total Complaints', value: complaints.length, color: '#1a6b3c' },
-            { label: 'Pending', value: complaints.filter(c => c.status === 'pending').length, color: '#ff9800' },
-            { label: 'In Progress', value: complaints.filter(c => c.status === 'in-progress').length, color: '#2196f3' },
-            { label: 'Resolved', value: complaints.filter(c => c.status === 'resolved').length, color: '#4caf50' }
-          ].map((stat, i) => (
-            <div key={i} style={{
-              background: 'white', borderRadius: '12px',
-              padding: '20px', flex: '1', minWidth: '150px',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.1)', textAlign: 'center'
-            }}>
-              <div style={{ fontSize: '32px', fontWeight: 'bold', color: stat.color }}>{stat.value}</div>
-              <div style={{ color: '#666', fontSize: '14px' }}>{stat.label}</div>
-            </div>
-          ))}
-        </div>
-
-        <button onClick={() => setShowForm(!showForm)} style={{
-          background: '#1a6b3c', color: 'white', border: 'none',
-          padding: '12px 24px', borderRadius: '8px', fontSize: '16px',
-          cursor: 'pointer', marginBottom: '24px', fontWeight: 'bold'
-        }}>
-          {showForm ? '✕ Cancel' : '+ New Complaint'}
-        </button>
-
-        {showForm && (
-          <div style={{
-            background: 'white', borderRadius: '12px',
-            padding: '24px', marginBottom: '24px',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-          }}>
-            <h3 style={{ margin: '0 0 20px', color: '#1a6b3c' }}>Submit New Complaint</h3>
-            <form onSubmit={handleSubmit}>
-              <div style={{ marginBottom: '16px' }}>
-                <label style={{ display: 'block', marginBottom: '6px', fontWeight: 'bold', color: '#333' }}>Title</label>
-                <input type="text" value={formData.title}
-                  onChange={e => setFormData({ ...formData, title: e.target.value })}
-                  placeholder="Brief title of your complaint" required
-                  style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '6px', boxSizing: 'border-box' }} />
-              </div>
-              <div style={{ marginBottom: '16px' }}>
-                <label style={{ display: 'block', marginBottom: '6px', fontWeight: 'bold', color: '#333' }}>Category</label>
-                <select value={formData.category}
-                  onChange={e => setFormData({ ...formData, category: e.target.value })}
-                  style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '6px' }}>
-                  <option value="water">Water</option>
-                  <option value="road">Road</option>
-                  <option value="electricity">Electricity</option>
-                  <option value="sanitation">Sanitation</option>
-                  <option value="other">Other</option>
-                </select>
-              </div>
-              <div style={{ marginBottom: '16px' }}>
-                <label style={{ display: 'block', marginBottom: '6px', fontWeight: 'bold', color: '#333' }}>Village</label>
-                <input type="text" value={formData.village}
-                  onChange={e => setFormData({ ...formData, village: e.target.value })}
-                  placeholder="Your village name" required
-                  style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '6px', boxSizing: 'border-box' }} />
-              </div>
-              <div style={{ marginBottom: '20px' }}>
-                <label style={{ display: 'block', marginBottom: '6px', fontWeight: 'bold', color: '#333' }}>Description</label>
-                <textarea value={formData.description}
-                  onChange={e => setFormData({ ...formData, description: e.target.value })}
-                  placeholder="Describe your complaint in detail" required rows={4}
-                  style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '6px', boxSizing: 'border-box' }} />
-              </div>
-              <button type="submit" style={{
-                background: '#1a6b3c', color: 'white', border: 'none',
-                padding: '12px 32px', borderRadius: '8px', fontSize: '16px',
-                cursor: 'pointer', fontWeight: 'bold'
-              }}>Submit Complaint</button>
-            </form>
+    <div className="portal-shell">
+      <PortalHeader user={user} />
+      <main className="page-content">
+        <section className="welcome-panel">
+          <div className="welcome-copy">
+            <p className="eyebrow">Your village, heard</p>
+            <h1>Good to see you, {user?.name || 'there'}.</h1>
+            <p>Raise an issue and follow every update until it’s resolved.</p>
           </div>
-        )}
+          <div className="welcome-icon" aria-hidden="true">🌱</div>
+        </section>
 
-        <div>
-          <h3 style={{ color: '#333', marginBottom: '16px' }}>My Complaints</h3>
-          {complaints.length === 0 ? (
-            <div style={{
-              background: 'white', borderRadius: '12px', padding: '40px',
-              textAlign: 'center', color: '#666', boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-            }}>
-              No complaints yet. Click "New Complaint" to submit one!
+        {error && <div className="error-banner" role="alert">{error}</div>}
+        {success && <div className="success-banner" role="status">{success}</div>}
+
+        <section className="stats-grid" aria-label="Complaint status summary">
+          {stats.map((stat) => (
+            <button type="button" key={stat.key} data-tone={stat.tone}
+              className={`stat-card${activeFilter === stat.key ? ' is-active' : ''}`}
+              aria-pressed={activeFilter === stat.key}
+              onClick={() => setActiveFilter(stat.key)}>
+              <span className="stat-icon" aria-hidden="true">{stat.icon}</span>
+              <span><strong className="stat-number">{stat.value}</strong><small className="stat-label">{stat.label}</small></span>
+            </button>
+          ))}
+        </section>
+
+        <section aria-labelledby="complaints-heading">
+          <div className="section-heading">
+            <div>
+              <h2 id="complaints-heading">Your complaints</h2>
+              <p>Updates and feedback stay connected to each issue.</p>
             </div>
-          ) : (
-            complaints.map((complaint) => (
-              <div key={complaint._id} style={{
-                background: 'white', borderRadius: '12px',
-                padding: '20px', marginBottom: '16px',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
-                  <div>
-                    <h4 style={{ margin: '0 0 8px', color: '#333' }}>{complaint.title}</h4>
-                    <p style={{ margin: '0 0 8px', color: '#666', fontSize: '14px' }}>{complaint.description}</p>
-                    <span style={{ fontSize: '12px', color: '#999' }}>
-                      📍 {complaint.village} | 🏷️ {complaint.category}
-                    </span>
-                  </div>
-                  <span style={{
-                    background: getStatusColor(complaint.status), color: 'white',
-                    padding: '4px 12px', borderRadius: '20px',
-                    fontSize: '12px', fontWeight: 'bold', whiteSpace: 'nowrap'
-                  }}>{complaint.status}</span>
+            <button type="button" className="button button-primary" onClick={() => {
+              setShowForm((visible) => !visible);
+              setError('');
+            }}>
+              {showForm ? 'Close form' : '+ Raise an issue'}
+            </button>
+          </div>
+
+          {showForm && (
+            <form className="complaint-card complaint-main" onSubmit={submitComplaint}>
+              <div className="section-heading" style={{ marginTop: 0 }}>
+                <div><h3>Tell us what needs attention</h3><p>Fields marked with * are required.</p></div>
+              </div>
+              <div className="form-grid">
+                <div className="form-field span-two">
+                  <label htmlFor="complaint-title">Issue title *</label>
+                  <input id="complaint-title" value={formData.title} maxLength={120} required
+                    onChange={(event) => setFormData({ ...formData, title: event.target.value })}
+                    placeholder="For example: Street light not working" />
+                </div>
+                <div className="form-field">
+                  <label htmlFor="complaint-category">Category *</label>
+                  <select id="complaint-category" value={formData.category}
+                    onChange={(event) => setFormData({ ...formData, category: event.target.value })}>
+                    <option value="water">Water</option><option value="road">Roads</option>
+                    <option value="electricity">Electricity</option><option value="sanitation">Sanitation</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+                <div className="form-field">
+                  <label htmlFor="complaint-village">Village *</label>
+                  <input id="complaint-village" value={formData.village} maxLength={100} required
+                    onChange={(event) => setFormData({ ...formData, village: event.target.value })}
+                    placeholder="Your village name" />
+                </div>
+                <div className="form-field span-two">
+                  <label htmlFor="complaint-description">What happened? *</label>
+                  <textarea id="complaint-description" value={formData.description} maxLength={3000} required
+                    onChange={(event) => setFormData({ ...formData, description: event.target.value })}
+                    placeholder="Share where it is and how it affects people." />
+                </div>
+                <div className="form-field">
+                  <label htmlFor="complaint-photo">Add a photo (optional)</label>
+                  <input id="complaint-photo" type="file" accept="image/jpeg,image/png,image/webp" onChange={handlePhoto} />
+                  <span className="form-help">JPEG, PNG or WebP · up to 2 MB</span>
+                  {photo && <button className="subtle-link" type="button" onClick={() => setPhoto(null)}>Remove selected photo</button>}
+                </div>
+                <div className="form-field">
+                  <label>Pin the issue location (optional)</label>
+                  <button type="button" className="button button-light" onClick={captureLocation}>
+                    {location ? '✓ Location attached' : 'Use my current location'}
+                  </button>
+                  <span className="form-help">{location ? `${location.latitude.toFixed(5)}, ${location.longitude.toFixed(5)}` : 'Your browser will ask permission.'}</span>
                 </div>
               </div>
-            ))
+              <div className="form-actions">
+                <button type="submit" className="button button-primary" disabled={submitting}>
+                  {submitting ? 'Submitting…' : 'Submit complaint'}
+                </button>
+                <span className="form-help">You’ll receive an in-app update when the status changes.</span>
+              </div>
+            </form>
           )}
-        </div>
-      </div>
+
+          <div className="filter-row">
+            <span className="filter-label">Showing {visibleComplaints.length} of {complaints.length}</span>
+            <input className="search-field" type="search" value={search} onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search title, village or category" aria-label="Search your complaints" />
+          </div>
+
+          {loading ? (
+            <div className="empty-state"><span>⏳</span><strong>Loading your updates</strong><p>This should only take a moment.</p></div>
+          ) : visibleComplaints.length === 0 ? (
+            <div className="empty-state">
+              <span>{complaints.length ? '🔎' : '📝'}</span>
+              <strong>{complaints.length ? 'No complaints match this view' : 'Nothing reported yet'}</strong>
+              <p>{complaints.length ? 'Try a different status or search term.' : 'When something needs attention, report it here and track what happens next.'}</p>
+            </div>
+          ) : (
+            <div className="complaint-list">
+              {visibleComplaints.map((complaint) => (
+                <ComplaintCard key={complaint._id} complaint={complaint} token={token} refresh={fetchComplaints} setError={setError} setSuccess={setSuccess} />
+              ))}
+            </div>
+          )}
+        </section>
+      </main>
     </div>
   );
 }

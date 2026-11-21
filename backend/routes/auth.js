@@ -3,6 +3,25 @@ const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const { findOrCreateGoogleCitizen, verifyGoogleCredential } = require('../services/googleAuth');
+
+function createLoginResponse(user) {
+  const token = jwt.sign(
+    { userId: user._id, role: user.role },
+    process.env.JWT_SECRET,
+    { expiresIn: '7d' }
+  );
+  return {
+    message: 'Login successful!',
+    token,
+    user: {
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role
+    }
+  };
+}
 
 // Register
 router.post('/register', async (req, res) => {
@@ -57,30 +76,29 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ message: 'Invalid email or password' });
     }
 
-    const isMatch = await bcrypt.compare(password, user.password);
+    const isMatch = user.password ? await bcrypt.compare(password, user.password) : false;
     if (!isMatch) {
       return res.status(400).json({ message: 'Invalid email or password' });
     }
 
-    const token = jwt.sign(
-      { userId: user._id, role: user.role },
-      process.env.JWT_SECRET,
-      { expiresIn: '7d' }
-    );
-
-    res.json({
-      message: 'Login successful!',
-      token,
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role
-      }
-    });
+    res.json(createLoginResponse(user));
 
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+router.post('/google', async (req, res) => {
+  try {
+    const profile = await verifyGoogleCredential(req.body?.idToken);
+    const user = await findOrCreateGoogleCitizen(profile);
+    res.json(createLoginResponse(user));
+  } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ message: error.message });
+    }
+    console.error('Google sign-in failed:', error.message);
+    res.status(500).json({ message: 'Google sign-in failed. Please try again.' });
   }
 });
 

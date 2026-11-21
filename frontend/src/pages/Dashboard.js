@@ -55,7 +55,7 @@ function FeedbackForm({ complaint, token, onSaved, onError }) {
     setSaving(true);
     onError('');
     try {
-      const response =       await axios.post(`${API}/api/complaints/${complaint._id}/feedback`, { rating, comment }, {
+      await axios.post(`${API}/api/complaints/${complaint._id}/feedback`, { rating, comment }, {
         headers: { Authorization: token }
       });
       await onSaved();

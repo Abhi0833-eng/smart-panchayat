@@ -8,6 +8,16 @@ Smart Panchayat is a full-stack digital grievance management platform for villag
 - **Backend API:** https://smart-panchayat-r33v.onrender.com
 - **Health check:** https://smart-panchayat-r33v.onrender.com/api/health
 
+## Faculty Demo
+
+1. Open the deployed [Smart Panchayat website](https://smart-panchayat-six.vercel.app); the live demo does not require the local development servers.
+2. Before presenting, open the [backend health check](https://smart-panchayat-r33v.onrender.com/api/health) and confirm it reports `status: ok` and `database: connected`.
+3. Demonstrate the citizen flow with an approved Google account: submit a complaint and follow its status and notifications.
+4. Sign out, then use a provisioned administrator account with email and password to assign a department and update the complaint status.
+5. Return to the citizen account to show the status update, notification, and feedback/reopen options.
+
+The website is hosted on Vercel, the API on Render, and application data in MongoDB Atlas. Keep account credentials and environment variables private; they are not included in this repository.
+
 ## Main Features
 
 ### Citizen
@@ -286,14 +296,7 @@ Frontend: http://localhost:3000
 
 ## Demo Guide
 
-1. Register a citizen account.
-2. Log in and open the citizen dashboard.
-3. Submit a complaint from the `New Complaint` form.
-4. Log out.
-5. Log in with an account whose MongoDB role is `admin`.
-6. Open `/admin`.
-7. Assign a department, priority, and target date, then add a status update.
-8. Sign in as the citizen, check the notification and timeline, then leave feedback or reopen the issue.
+For local development, follow the same citizen-to-admin workflow using the accounts configured for your environment. The production demonstration steps and live links are in [Faculty Demo](#faculty-demo).
 
 ## Deployment
 
